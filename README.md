@@ -17,7 +17,7 @@
 
 ## 🔬 设计哲学
 
-我们遵循交互设计金律：
+遵循交互设计金律：
 1. **Overview First**: 第一眼展示全球排放概览。
 2. **Zoom and Filter**: 通过搜索框和 DataZoom 快速定位目标国家。
 3. **Details on Demand**: 点击柱条触发联动，查看特定国家的十年故事。
