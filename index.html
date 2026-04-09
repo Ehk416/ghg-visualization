@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Carbon Storyteller - 全球排放轨迹看板</title>
+    <!-- 引入外部库 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { background-color: #050a14; color: #e2e8f0; font-family: 'Inter', sans-serif; overflow: hidden; }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
+        #rankChart { height: 72vh; }
+        #trendChart { height: 42vh; }
+        .story-btn { transition: all 0.3s; border: 1px solid rgba(255,255,255,0.1); }
+        .story-btn:hover { background: rgba(16, 185, 129, 0.2); border-color: #10b981; }
+        /* 隐藏默认滚动条 */
+        ::-webkit-scrollbar { width: 0px; }
+    </style>
+</head>
+<body class="p-6 h-screen">
+
+    <div class="max-w-[1750px] mx-auto h-full flex flex-col">
+        <!-- 头部：叙事标题与年度控制 -->
+        <header class="flex justify-between items-end mb-6">
+            <div>
+                <h1 class="text-4xl font-black tracking-tighter text-white">
+                    同样的繁荣，<span class="text-emerald-500 italic">不同的代价</span>
+                </h1>
+                <p class="text-slate-400 text-sm mt-1">探索 2014-2023 年间主要经济体的人均碳足迹演变</p>
+            </div>
+            
+            <!-- 故事快照：聚焦特定子集 -->
+            <div class="flex gap-3">
+                <button onclick="applyStory('champions')" class="story-btn px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-400">
+                    🍃 减排先锋
+                </button>
+                <button onclick="applyStory('heavy')" class="story-btn px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest bg-rose-500/10 text-rose-400">
+                    ⚠️ 排放大户
+                </button>
+            </div>
+
+            <!-- 年度拖动条 -->
+            <div class="flex items-center gap-6 glass px-6 py-2 rounded-2xl shadow-2xl">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-tighter">快照年份</span>
+                <input type="range" id="yearSlider" min="2014" max="2023" value="2021" class="w-32 accent-emerald-500">
+                <span id="yearLabel" class="text-2xl font-mono font-bold text-emerald-500 w-12">2021</span>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-12 gap-6 flex-grow overflow-hidden">
+            <!-- 左侧：全球排名列表（带缩放功能） -->
+            <section class="col-span-4 glass rounded-3xl p-6 flex flex-col overflow-hidden shadow-2xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="font-bold text-slate-200">全球人均排放分布</h2>
+                    <input type="text" id="search" placeholder="输入代码筛选..." class="bg-slate-900 text-xs p-2 px-3 rounded-lg border border-slate-700 outline-none focus:border-emerald-500 w-32 transition-all">
+                </div>
+                <!-- 提示语 -->
+                <p class="text-[10px] text-slate-500 uppercase mb-2">💡 滚轮缩放查看更多 / 点击柱条进行联动</p>
+                <div id="rankChart" class="flex-grow"></div>
+            </section>
+
+            <!-- 右侧：详情看板与趋势 -->
+            <section class="col-span-8 flex flex-col gap-6">
+                <!-- 动态洞察面板：数据驱动的叙事 -->
+                <div class="glass rounded-3xl p-8 flex gap-8 items-center bg-gradient-to-br from-slate-900 to-slate-950 border-emerald-500/20 shadow-xl">
+                    <div class="flex-grow">
+                        <p class="text-emerald-500 text-xs font-black uppercase mb-1 tracking-widest opacity-80">Live Data Insight</p>
+                        <h3 id="insightTitle" class="text-3xl font-bold text-white mb-2 italic">加载中...</h3>
+                        <p id="insightDesc" class="text-slate-400 text-sm leading-relaxed max-w-2xl">
+                            正在初始化全球碳排放数据链路，请稍候。
+                        </p>
+                    </div>
+                    <div class="text-right border-l border-slate-800 pl-8">
+                        <p class="text-slate-500 text-xs font-bold uppercase tracking-widest">选中地区数值</p>
+                        <h3 id="focusVal" class="text-6xl font-mono font-black text-emerald-500 tracking-tighter">0.00</h3>
+                        <p class="text-[10px] text-slate-600 font-bold uppercase mt-1">kg CO2e per capita</p>
+                    </div>
+                </div>
+
+                <!-- 历史趋势图：带 OECD 平均基准线 -->
+                <div class="glass rounded-3xl p-6 flex-grow relative shadow-2xl">
+                    <div class="flex justify-between items-center mb-2 px-2">
+                        <h2 class="font-bold text-slate-200 uppercase text-xs tracking-widest">历史演变轨迹与基准对比</h2>
+                    </div>
+                    <div id="trendChart"></div>
+                    <!-- 自定义图例说明 -->
+                    <div class="absolute bottom-6 right-10 flex gap-6 text-[10px] text-slate-500 uppercase tracking-widest font-bold">
+                        <div class="flex items-center gap-2">
+                            <span class="inline-block w-6 border-t-2 border-slate-600 border-dashed"></span> OECD 平均基准
+                        </div>
+                        <div class="flex items-center gap-2 text-emerald-500">
+                            <span class="inline-block w-6 h-1 bg-emerald-500 rounded-full"></span> 选中地区趋势
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        let rawData = [];
+        let rankChart, trendChart;
+        let selectedYear = 2021;
+        let currentCountry = 'AUS'; // 初始聚焦一个极高排放案例
+        const years = [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023];
+
+        function init() {
+            rankChart = echarts.init(document.getElementById('rankChart'), 'dark');
+            trendChart = echarts.init(document.getElementById('trendChart'), 'dark');
+            
+            // 点击排名图实现联动
+            rankChart.on('click', (p) => { 
+                currentCountry = p.name; 
+                updateView(); 
+            });
+
+            window.addEventListener('resize', () => { rankChart.resize(); trendChart.resize(); });
+        }
+
+        // 满足作业要求的“聚焦子集”功能
+        function applyStory(type) {
+            if (type === 'champions') {
+                currentCountry = 'SWE'; // 瑞典：减排优等生
+            } else if (type === 'heavy') {
+                currentCountry = 'CAN'; // 加拿大：资源型高排放典型
+            }
+            updateView();
+        }
+
+        function updateView() {
+            const query = document.getElementById('search').value.toUpperCase();
+            const exclude = ['OECD', 'OECDA', 'OECDE', 'OECDSO', 'EU27_2020'];
+            
+            // 计算年度 OECD 平均值作为基准线
+            const yearlyAvg = years.map(y => {
+                const vals = rawData.filter(d => d.year === y && !exclude.includes(d.area)).map(d => d.val);
+                return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+            });
+
+            // 过滤排名图数据
+            const yearData = rawData.filter(d => d.year === selectedYear && !exclude.includes(d.area))
+                                   .filter(d => d.area.includes(query))
+                                   .sort((a, b) => a.val - b.val);
+
+            // 获取选中国家的历史数据
+            const trendData = rawData.filter(d => d.area === currentCountry).sort((a, b) => a.year - b.year);
+            const currentObj = trendData.find(d => d.year === selectedYear);
+            
+            // 更新叙事文案
+            updateInsightText(currentCountry, currentObj ? currentObj.val : 0);
+
+            // 渲染排名图（带缩放配置）
+            rankChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: { 
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' },
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    borderColor: '#334155',
+                    textStyle: { color: '#fff', fontSize: 12 }
+                },
+                grid: { top: 20, left: 65, right: 55, bottom: 20 },
+                
+                // --- 补全的左侧排名缩放功能 ---
+                dataZoom: [
+                    {
+                        type: 'inside', 
+                        yAxisIndex: 0,
+                        start: 75, // 默认显示后 25% 国家（排放较高的一组，最有故事性）
+                        end: 100,
+                        zoomOnMouseWheel: true
+                    },
+                    {
+                        type: 'slider', 
+                        yAxisIndex: 0,
+                        right: 15,
+                        width: 10,
+                        borderColor: 'transparent',
+                        fillerColor: 'rgba(16, 185, 129, 0.2)',
+                        handleIcon: 'circle',
+                        handleSize: '80%',
+                        handleStyle: { color: '#10b981' },
+                        textStyle: { show: false },
+                        start: 75,
+                        end: 100
+                    }
+                ],
+
+                xAxis: { type: 'value', splitLine: { show: false } },
+                yAxis: { 
+                    type: 'category', 
+                    data: yearData.map(d => d.area),
+                    axisLabel: { color: '#94a3b8', fontSize: 11 },
+                    axisLine: { show: false },
+                    axisTick: { show: false }
+                },
+                series: [{
+                    name: '人均排放',
+                    type: 'bar',
+                    data: yearData.map(d => ({
+                        value: d.val,
+                        itemStyle: { 
+                            color: d.area === currentCountry ? '#10b981' : '#1e293b',
+                            shadowBlur: d.area === currentCountry ? 15 : 0,
+                            shadowColor: '#10b981'
+                        }
+                    })),
+                    itemStyle: { borderRadius: 4 },
+                    label: {
+                        show: true,
+                        position: 'right',
+                        color: '#64748b',
+                        fontSize: 10,
+                        formatter: '{c}'
+                    },
+                    emphasis: { itemStyle: { color: '#059669' } }
+                }]
+            }, true);
+
+            // 渲染趋势图（带基准线）
+            trendChart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: { 
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    borderColor: '#334155',
+                    textStyle: { color: '#fff' }
+                },
+                grid: { top: 40, left: 60, right: 40, bottom: 40 },
+                xAxis: { 
+                    type: 'category', 
+                    data: years,
+                    axisLine: { lineStyle: { color: '#334155' } },
+                    axisLabel: { color: '#64748b' }
+                },
+                yAxis: { 
+                    type: 'value', 
+                    splitLine: { lineStyle: { color: '#0f172a', type: 'dashed' } },
+                    axisLabel: { color: '#64748b' }
+                },
+                series: [
+                    {
+                        name: 'OECD 平均水平',
+                        type: 'line',
+                        data: yearlyAvg,
+                        lineStyle: { type: 'dashed', color: '#475569', width: 2 },
+                        symbol: 'none'
+                    },
+                    {
+                        name: currentCountry,
+                        type: 'line',
+                        smooth: true,
+                        connectNulls: true,
+                        data: years.map(y => {
+                            const m = trendData.find(d => d.year === y);
+                            return m ? m.val : null;
+                        }),
+                        itemStyle: { color: '#10b981' },
+                        lineStyle: { width: 4 },
+                        symbolSize: 8,
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(16, 185, 129, 0.25)' },
+                                { offset: 1, color: 'rgba(16, 185, 129, 0)' }
+                            ])
+                        }
+                    }
+                ]
+            }, true);
+            document.getElementById('focusVal').innerText = currentObj ? currentObj.val.toFixed(2) : "N/A";
+        }
+
+        // 叙事逻辑层：将数据转化为发现
+        function updateInsightText(country, val) {
+            const title = document.getElementById('insightTitle');
+            const desc = document.getElementById('insightDesc');
+            title.innerText = country + " 的排放故事";
+            
+            const stories = {
+                'SWE': "瑞典是低碳社会的典范。通过深度依赖水电和核能，其排放量长期保持在基准线以下，且在维持极高GDP的同时持续压低碳足迹。",
+                'AUS': "由于传统煤炭行业和矿产出口，澳大利亚的人均排放一度位居 OECD 榜首。虽然近年曲线下行，但其基数仍是多数欧洲国家的 3-4 倍。",
+                'GBR': "英国在过去十年间完成了惊人的煤炭退出计划。其趋势曲线的陡峭下降轨迹，是大型工业国实现‘绿色增长’的最佳证明。",
+                'CAN': "加拿大展示了资源型大国的转型阵痛。尽管森林资源丰富，但高寒气候和化石能源开采使其人均排放始终处于‘预警’区间。",
+                'FRA': "法国得益于早期的核能战略，排放水平比生活水平相近的德国更低，始终是主要经济体中的低碳优等生。"
+            };
+
+            desc.innerText = stories[country] || `正在观察 ${country} 的排放演变。在 2020 年，我们可以观察到全球共同的“疫情凹陷”，但随后的曲线反弹速度揭示了各国能源结构的本质。`;
+        }
+
+        // 启动数据引擎
+        Papa.parse("data.csv", {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                rawData = results.data.map(d => ({
+                    area: d.REF_AREA,
+                    year: parseInt(d.TIME_PERIOD),
+                    val: parseFloat(d.OBS_VALUE)
+                })).filter(d => d.area && !isNaN(d.val));
+
+                init();
+                updateView();
+
+                document.getElementById('yearSlider').oninput = (e) => {
+                    selectedYear = parseInt(e.target.value);
+                    document.getElementById('yearLabel').innerText = selectedYear;
+                    updateView();
+                };
+
+                document.getElementById('search').oninput = updateView;
+            }
+        });
+    </script>
+</body>
+</html>
